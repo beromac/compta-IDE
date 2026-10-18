@@ -115,3 +115,4 @@ label.check input{width:auto;margin:0}
 .bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin:6px 0}
 .bar>i{display:block;height:100%;background:var(--brand)}
 [hidden]{display:none!important}
+h4{font-size:.95rem;margin:14px 0 6px}

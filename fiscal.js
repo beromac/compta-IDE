@@ -258,6 +258,39 @@ function computeYear(entries, year, opts = {}) {
   };
 }
 
+
+// ---------- Plafonds de déduction : Madelin santé/prévoyance et PER / Madelin retraite ----------
+// PASS = plafond annuel de la Sécurité sociale (2025 : 47 100 €, 2026 : 48 060 €). Années suivantes : ajoutez-les ici.
+const PASS = { 2023: 43992, 2024: 46368, 2025: 47100, 2026: 48060 };
+const passFor = (year) => { const ys = Object.keys(PASS).map(Number).sort((a, b) => a - b); return PASS[year] || PASS[ys[year < ys[0] ? 0 : ys.length - 1]]; };
+
+// Estimation d'après la formule de l'article 154 bis du CGI (bénéfice et PASS de l'année).
+// reliquat : plafond non utilisé des années précédentes, tel qu'indiqué sur l'avis d'impôt.
+function plafondsDeduction(R, year, reliquat = 0) {
+  const pass = passFor(year);
+  const madelinPaye = R.byPoste.madelin ? R.byPoste.madelin.total : 0;
+  const perPaye = R.per || 0;
+
+  // PER / Madelin retraite : 10 % du bénéfice (limité à 8 PASS) + 15 % de la part entre 1 et 8 PASS, plancher 10 % du PASS
+  const B = Math.max(0, R.resultat);
+  const Bc = Math.min(B, 8 * pass);
+  const calc = 0.10 * Bc + 0.15 * Math.max(0, Bc - pass);
+  const plancher = 0.10 * pass;
+  const plafondPer = round2(Math.max(calc, plancher));
+  const rel = Math.max(0, Number(reliquat) || 0);
+  const dispo = round2(plafondPer + rel);
+
+  // Madelin santé / prévoyance / perte d'emploi : 3,75 % du revenu pro + 7 % du PASS, limité à 3 % de 8 PASS
+  const baseMad = Math.max(0, R.resultat + madelinPaye);
+  const plafondMad = round2(Math.min(0.0375 * baseMad + 0.07 * pass, 0.03 * 8 * pass));
+
+  return {
+    pass,
+    per: { plafond: plafondPer, plancher: round2(plancher), reliquat: rel, dispo, verse: round2(perPaye), reste: round2(dispo - perPaye), exces: round2(Math.max(0, perPaye - dispo)) },
+    madelin: { plafond: plafondMad, verse: round2(madelinPaye), reste: round2(plafondMad - madelinPaye), exces: round2(Math.max(0, madelinPaye - plafondMad)) },
+  };
+}
+
 // Comparaison micro-BNC / déclaration contrôlée (base imposable avant cotisations sociales)
 function compareRegimes(R, year) {
   const f = fiscalFor(year);
@@ -277,5 +310,5 @@ function compareRegimes(R, year) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { BAREME_KM, ikAmount, CATS, POSTES, catByKey, computeYear, compareRegimes, deductible, dotation, fiscalFor, ABATTEMENT_MICRO, ABATTEMENT_MIN, SEUIL_2035E };
+  module.exports = { PASS, passFor, plafondsDeduction, BAREME_KM, ikAmount, CATS, POSTES, catByKey, computeYear, compareRegimes, deductible, dotation, fiscalFor, ABATTEMENT_MICRO, ABATTEMENT_MIN, SEUIL_2035E };
 }

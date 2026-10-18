@@ -321,6 +321,9 @@ function renderRecap() {
   if (R.veh.method === 'bareme' && R.veh.totalKm === 0 && R.rec > 0) warnings.push('Méthode « barème kilométrique » sans aucun kilomètre saisi : ajoutez vos kilomètres professionnels (Saisie → Km), sinon aucun frais de véhicule n\'est déduit.');
   if (R.veh.method === 'reel' && R.veh.reel === 0 && R.veh.totalKm > 0) warnings.push('Méthode « frais réels » choisie alors que vous avez saisi des kilomètres : saisissez vos frais de véhicule (catégorie « Véhicule : frais réels ») ou repassez au barème.');
   if (entries.some((e) => e.date?.startsWith(String(year)) && e.cat === 'petit_mat' && e.amount > 500)) warnings.push('Une dépense « petit matériel » dépasse 500 € HT : un bien de plus de 500 € HT doit en principe être immobilisé et amorti (catégorie « Achat de matériel > 500 € »).');
+  const PL = plafondsDeduction(R, year, settings.get('reliquatPER.' + year, 0));
+  if (PL.madelin.exces > 0) warnings.push(`Mutuelle / prévoyance Madelin : vous dépassez le plafond de déduction estimé (${eur(PL.madelin.plafond)}) de ${eur(PL.madelin.exces)}. Cet excédent n'est pas déductible : il faut le réintégrer au bénéfice (bénéfice à retenir ≈ ${eur(R.resultat + PL.madelin.exces)}).`);
+  if (PL.per.exces > 0) warnings.push(`PER / Madelin retraite : vous dépassez votre plafond de déduction estimé (${eur(PL.per.dispo)}) de ${eur(PL.per.exces)}. L'excédent ne sera pas déductible cette année.`);
   if (C.depassePlafond) warnings.push(`Vos recettes dépassent le plafond micro-BNC (${eur(C.plafond)}). Le régime de la déclaration contrôlée (2035) peut s'imposer, vérifiez avec votre centre de gestion ou votre comptable.`);
 
   let h = `<div class="print-head"><b>${esc(name) || 'Infirmière libérale'}</b> — récapitulatif de l'année ${year} (comptabilité de trésorerie : recettes encaissées, dépenses payées)</div>`;
@@ -361,7 +364,7 @@ function renderRecap() {
   else h += `<p class="note ok">Résultat négatif : déficit à reporter sur la <b>2042-C-PRO</b> case <span class="case">${dC}</span>. Il est imputable sur vos autres revenus selon les règles des déficits BNC.</p>`;
   h += `<p class="hint">Cases pour ${oga ? 'adhérente à un OGA/AGA' : 'non-adhérente'} (modifiable dans Réglages). </p>`;
   if (R.rec > SEUIL_2035E) h += `<p class="note">Vos recettes dépassent ${eur(SEUIL_2035E)} : l'annexe 2035-E (valeur ajoutée / CVAE) doit être jointe à la liasse.</p>`;
-  if (R.per) h += `<p class="note">Versements PER / Madelin retraite saisis : <b>${eur(R.per)}</b>. À reporter sur la <b>2042</b> (cases <span class="case">6NS</span> / <span class="case">6NT</span> selon la déclarante), jamais sur la 2035.</p>`;
+  if (R.per) h += `<p class="note">Versements PER / Madelin retraite saisis : <b>${eur(R.per)}</b>. À reporter sur la <b>2042</b> (cases <span class="case">6NS</span> / <span class="case">6NT</span> selon la déclarante), jamais sur la 2035. Plafond estimé : ${eur(PL.per.dispo)}, reste ${eur(Math.max(0, PL.per.reste))} (détail onglet Cotisations).</p>`;
   h += '<p class="hint">À savoir : la CSG est déductible pour sa part de 6,8 % seulement. La CSG est de 9,2 % : 6,8 % sont déductibles, 2,4 % ne le sont pas, ni la CRDS (0,5 %), soit 2,9 % non déductibles au total. L\'impôt sur le revenu et les amendes ne sont jamais déductibles.</p>';
   // Véhicule : barème ou frais réels
   {
@@ -435,7 +438,29 @@ function renderCot() {
     <tr><td>CSG déductible (6,8 %)</td><td class="n">${eur(R.byPoste.csg?.total || 0)}</td></tr>
     <tr><td>CSG non déductible + CRDS (à ne pas déduire)</td><td class="n">${eur(R.byPoste.csg_nd?.total || 0)}</td></tr></tbody></table></div>
     <p class="hint">Comptabilité de trésorerie : seules les sommes payées dans l'année sont déduites, y compris les régularisations d'années passées. La CSG-CRDS détaillée sur votre échéancier ou votre attestation URSSAF permet de séparer la part déductible. Si vous ne la renseignez pas, tout le paiement est compté comme cotisation déductible : vérifiez avec votre comptable. Les cotisations facultatives Madelin santé/prévoyance se saisissent à part ; PER et Madelin retraite vont sur la 2042.${u.paid && !u.csgDed && !u.csgND ? ' <b>Aucun détail CSG-CRDS saisi pour l\'URSSAF cette année.</b>' : ''}</p></div>`;
+  const PL = plafondsDeduction(R, year, settings.get('reliquatPER.' + year, 0));
+  const st = (x) => (x.exces > 0 ? `<span class="chip warn">dépassement de ${eur(x.exces)}</span>` : x.reste > 0 ? `<span class="chip">reste ${eur(x.reste)}</span>` : '<span class="chip">plafond atteint</span>');
+  h += `<div class="panel"><h3>Plafonds de déduction ${year} (estimation)</h3>
+    <p class="hint">Calculés sur votre bénéfice de ${year} saisi dans l'application (${eur(Math.max(0, R.resultat))}) et sur le plafond de la Sécurité sociale de ${year} (${eur(PL.pass)}). Le bénéfice final peut encore évoluer d'ici la fin de l'année.</p>
+    <h4>Mutuelle et prévoyance Madelin (2035)</h4>
+    <div class="tablewrap"><table><tbody>
+      <tr><td>Plafond de déduction</td><td class="n">${eur(PL.madelin.plafond)}</td></tr>
+      <tr><td>Déjà versé (catégorie « Madelin santé / prévoyance »)</td><td class="n">${eur(PL.madelin.verse)}</td></tr>
+      <tr class="total"><td>${PL.madelin.exces > 0 ? 'Excédent non déductible' : 'Reste déductible'}</td><td class="n">${eur(PL.madelin.exces > 0 ? PL.madelin.exces : PL.madelin.reste)}</td></tr></tbody></table></div>
+    <p>${st(PL.madelin)}</p>
+    <h4>Retraite facultative : PER / Madelin retraite (2042)</h4>
+    <label>Plafond non utilisé des années précédentes (€), repris sur votre avis d'impôt
+      <input type="number" inputmode="decimal" min="0" step="0.01" id="reliquatPER" value="${PL.per.reliquat || ''}" placeholder="0"></label>
+    <div class="tablewrap"><table><tbody>
+      <tr><td>Plafond ${year} (minimum légal ${eur(PL.per.plancher)})</td><td class="n">${eur(PL.per.plafond)}</td></tr>
+      <tr><td>Plafonds reportés des années précédentes</td><td class="n">${eur(PL.per.reliquat)}</td></tr>
+      <tr><td>Total disponible</td><td class="n">${eur(PL.per.dispo)}</td></tr>
+      <tr><td>Déjà versé en ${year} (catégorie « PER / Madelin retraite »)</td><td class="n">${eur(PL.per.verse)}</td></tr>
+      <tr class="total"><td>${PL.per.exces > 0 ? 'Excédent non déductible' : 'Reste à verser pour utiliser tout le plafond'}</td><td class="n">${eur(PL.per.exces > 0 ? PL.per.exces : PL.per.reste)}</td></tr></tbody></table></div>
+    <p>${st(PL.per)}</p>
+    <p class="hint">Un plafond non utilisé n'est pas perdu : il se reporte sur les années suivantes (3 ans pour ceux nés jusqu'en 2025, 5 ans à partir de 2026, d'après les guides consultés). Verser davantage n'est donc pas une obligation : l'intérêt dépend de votre tranche d'imposition et de votre besoin de bloquer cet argent jusqu'à la retraite. Le plafond Madelin santé/prévoyance est commun à la mutuelle, à la prévoyance et à la perte d'emploi.</p></div>`;
   $('#cotBody').innerHTML = h;
+  const rel = $('#reliquatPER'); if (rel) rel.onchange = () => { settings.set('reliquatPER.' + year, rel.value); renderCot(); };
   $$('#cotBody [data-appel]').forEach((i) => (i.onchange = () => { settings.set(`appel.${year}.${i.dataset.appel}`, i.value); renderCot(); }));
   $$('#cotBody [data-edit]').forEach((b) => (b.onclick = () => startEdit(b.dataset.edit)));
   $$('#cotBody [data-addcot]').forEach((b) => (b.onclick = () => { resetForm(); $('#t-dep').checked = true; fillCats(b.dataset.addcot); editedFrom = 'cot'; $('#f-label').value = b.dataset.addcot === 'urssaf' ? 'Cotisations URSSAF' : 'Cotisations CARPIMKO'; show('saisie'); }));

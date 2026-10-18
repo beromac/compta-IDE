@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Compta IDEL</title>
+<meta name="description" content="Recettes, dépenses et justificatifs d'une infirmière libérale, avec récapitulatif pour la déclaration d'impôts.">
+<meta name="theme-color" content="#0f766e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Compta IDEL">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <h1>Compta IDEL</h1>
+  <div class="top-right">
+    <label class="sr" for="yearSel">Année</label>
+    <select id="yearSel"></select>
+  </div>
+</header>
+
+<div id="backupBanner" class="banner" hidden></div>
+
+<main>
+
+  <!-- ===== SAISIE ===== -->
+  <section id="view-saisie" class="view">
+    <form id="form" autocomplete="off">
+      <h2 id="formTitle">Nouvelle opération</h2>
+
+      <div class="seg" role="radiogroup" aria-label="Type d'opération">
+        <input type="radio" name="type" id="t-rec" value="recette" checked><label for="t-rec">＋ Recette</label>
+        <input type="radio" name="type" id="t-dep" value="depense"><label for="t-dep">－ Dépense</label>
+        <input type="radio" name="type" id="t-km" value="km"><label for="t-km">🚗 Km</label>
+      </div>
+
+      <div class="grid">
+        <label>Date
+          <input type="date" id="f-date" required>
+        </label>
+        <label id="amountWrap">Montant (€)
+          <input type="number" id="f-amount" inputmode="decimal" step="0.01" min="0" placeholder="0,00" required>
+        </label>
+      </div>
+
+      <label id="catWrap">Catégorie
+        <select id="f-cat" required></select>
+      </label>
+      <p id="catHint" class="hint" hidden></p>
+
+      <label>Libellé
+        <input type="text" id="f-label" placeholder="Ex. : Facture CPAM semaine 42, Pharmacie du centre…" required>
+      </label>
+
+      <div class="grid" id="modeGrid">
+        <label id="modeWrap">Mode de paiement
+          <select id="f-mode">
+            <option>Virement</option><option>Carte bancaire</option><option>Chèque</option>
+            <option>Espèces</option><option>Prélèvement</option><option>Autre</option>
+          </select>
+        </label>
+        <label id="pctWrap" hidden>Part professionnelle (%)
+          <input type="number" id="f-pct" inputmode="numeric" min="0" max="100" step="1" value="100">
+        </label>
+      </div>
+
+      <label id="kmWrap" hidden>Kilomètres professionnels
+        <input type="number" id="f-km" inputmode="decimal" min="0" step="0.1" placeholder="Ex. : 85">
+      </label>
+      <p id="kmHint" class="hint" hidden>Total du jour, de la semaine ou du mois, comme vous préférez (agenda de tournées, carnet de bord, logiciel de planning). L'indemnité est calculée avec le barème kilométrique sur le total de l'année : voir Réglages pour la voiture et la méthode.</p>
+
+      <div id="cotWrap" class="grid" hidden>
+        <label>dont CSG déductible (€)
+          <input type="number" id="f-csgded" inputmode="decimal" min="0" step="0.01" placeholder="0,00">
+        </label>
+        <label>dont CSG non déductible + CRDS (€)
+          <input type="number" id="f-csgnd" inputmode="decimal" min="0" step="0.01" placeholder="0,00">
+        </label>
+      </div>
+
+      <label id="dureeWrap" hidden>Durée d'amortissement (années)
+        <input type="number" id="f-duree" inputmode="numeric" min="1" max="20" step="1" value="5">
+      </label>
+
+      <label>Note (facultatif)
+        <textarea id="f-note" rows="2" placeholder="Nom du patient non nécessaire. Ex. : repas avec Dr X, formation DPC…"></textarea>
+      </label>
+
+      <fieldset class="docs" id="docsBox">
+        <legend>Justificatifs</legend>
+        <div class="docbtns">
+          <button type="button" class="btn alt" id="btnPhoto">📷 Prendre une photo</button>
+          <button type="button" class="btn alt" id="btnFile">📎 Scan / fichier</button>
+        </div>
+        <input type="file" id="inPhoto" accept="image/*" capture="environment" hidden>
+        <input type="file" id="inFile" accept="image/*,application/pdf" multiple hidden>
+        <ul id="docList" class="docs-list"></ul>
+        <p class="hint">Les justificatifs restent dans l'appareil. Conservez-les 6 ans.</p>
+      </fieldset>
+
+      <div class="actions">
+        <button type="submit" class="btn" id="btnSave">Enregistrer</button>
+        <button type="button" class="btn ghost" id="btnCancel" hidden>Annuler la modification</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ===== MOIS ===== -->
+  <section id="view-mois" class="view" hidden>
+    <h2>Journal du mois</h2>
+    <div class="monthnav">
+      <button class="btn ghost" id="mPrev" aria-label="Mois précédent">‹</button>
+      <select id="monthSel" aria-label="Mois"></select>
+      <button class="btn ghost" id="mNext" aria-label="Mois suivant">›</button>
+    </div>
+    <div id="monthTotals" class="cards"></div>
+    <div id="monthList"></div>
+  </section>
+
+  <!-- ===== COTISATIONS ===== -->
+  <section id="view-cot" class="view" hidden>
+    <h2>Cotisations URSSAF et CARPIMKO <span id="cotYear"></span></h2>
+    <div id="cotBody"></div>
+  </section>
+
+  <!-- ===== ANNEE ===== -->
+  <section id="view-annee" class="view" hidden>
+    <div class="row-between">
+      <h2>Récapitulatif <span id="recapYear"></span></h2>
+      <button class="btn ghost" id="btnPrint">🖨 Imprimer / PDF</button>
+    </div>
+    <div id="recap"></div>
+  </section>
+
+  <!-- ===== REGLAGES ===== -->
+  <section id="view-reglages" class="view" hidden>
+    <h2>Réglages et sauvegardes</h2>
+
+    <div class="panel">
+      <h3>Mon profil</h3>
+      <label>Nom (pour l'impression)
+        <input type="text" id="s-name" placeholder="Prénom Nom">
+      </label>
+      <label>Mon régime d'imposition
+        <select id="s-regime">
+          <option value="inconnu">Je ne sais pas encore</option>
+          <option value="reel">Déclaration contrôlée (formulaire 2035)</option>
+          <option value="micro">Micro-BNC</option>
+        </select>
+      </label>
+      <label>Adhésion à un OGA / AGA (centre de gestion agréé)
+        <select id="s-oga">
+          <option value="oui">Oui</option>
+          <option value="non">Non</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="panel">
+      <h3>Véhicule professionnel</h3>
+      <label>Méthode pour l'année <span id="vehYear"></span>
+        <select id="s-vehmethod">
+          <option value="bareme">Barème kilométrique (forfait)</option>
+          <option value="reel">Frais réels</option>
+        </select>
+      </label>
+      <label>Véhicule
+        <select id="s-vehtype"></select>
+      </label>
+      <label class="check"><input type="checkbox" id="s-vehelec"> Véhicule 100 % électrique (majoration de 20 %)</label>
+      <p class="hint">Une seule méthode par année, pour tous vos véhicules. Avec le barème, vous saisissez vos kilomètres (onglet Saisie, « Km ») : carburant, entretien, assurance et amortissement sont inclus dans le forfait, seuls péages et parkings s'ajoutent. Au micro-BNC, ce choix ne s'applique pas.</p>
+    </div>
+
+    <div class="panel">
+      <h3>Sauvegarde</h3>
+      <p class="hint">Les données sont enregistrées uniquement dans cet appareil. Faites une sauvegarde chaque mois et gardez-la ailleurs (clé USB, e-mail, cloud).</p>
+      <div class="actions">
+        <button class="btn" id="btnExport">⬇ Sauvegarder (avec justificatifs)</button>
+        <label class="btn alt filebtn">⬆ Restaurer une sauvegarde
+          <input type="file" id="inRestore" accept="application/json,.json" hidden>
+        </label>
+        <button class="btn alt" id="btnCsv">Exporter le journal (CSV, année choisie)</button>
+      </div>
+      <p id="lastBackup" class="hint"></p>
+    </div>
+
+    <div class="panel" id="installPanel">
+      <h3>Installer l'application</h3>
+      <button class="btn" id="btnInstall" hidden>Installer sur cet appareil</button>
+      <p class="hint" id="installHint">Ordinateur (Chrome / Edge) : icône « installer » dans la barre d'adresse. Android : menu ⋮ puis « Installer l'application ». iPhone / iPad (Safari) : bouton Partager puis « Sur l'écran d'accueil ».</p>
+    </div>
+
+    <div class="panel danger">
+      <h3>Zone sensible</h3>
+      <button class="btn danger" id="btnWipe">Tout effacer sur cet appareil</button>
+    </div>
+
+    <p class="hint small">Cette application est une aide à la tenue du livre-journal. Elle ne remplace pas votre comptable ni les notices officielles des formulaires. Les règles fiscales sont dans <code>fiscal.js</code>.</p>
+  </section>
+
+</main>
+
+<nav class="tabs" aria-label="Navigation">
+  <button data-view="saisie" class="on">➕<span>Saisie</span></button>
+  <button data-view="mois">📅<span>Mois</span></button>
+  <button data-view="cot">🏛<span>Cotisations</span></button>
+  <button data-view="annee">📊<span>Année</span></button>
+  <button data-view="reglages">⚙️<span>Réglages</span></button>
+</nav>
+
+<div id="viewer" class="viewer" hidden>
+  <button id="viewerClose" class="btn ghost" aria-label="Fermer">✕</button>
+  <img id="viewerImg" alt="Justificatif">
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="fiscal.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
